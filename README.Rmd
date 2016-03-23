@@ -1,4 +1,4 @@
-Analyses of London housing data
+Visualisation of London housing data using `osmplotr`
 ========
 
 ## 1. Reading Data
@@ -60,17 +60,42 @@ devtools::load_all ('osmplotr')
 setwd (wd)
 ```
 
-Download for a restricted area encompassing central London
+Download a reasonably large area of London
 
 ```{r, eval=FALSE}
 bbox <- osmplotr::get_bbox (c (-0.21, 51.46, 0.06, 51.57))
 dat_HP <- osmplotr::extract_osm_objects (key="highway", value="primary", 
-                                         bbox=bbox)
+                                         bbox=bbox, verbose=TRUE)$obj
+save (dat_HP, file="./dat/dat_HP.rda", compress="xz")
+dat_HNP <- osmplotr::extract_osm_objects (key="highway", value="!primary", 
+                                         bbox=bbox, verbose=TRUE)$obj
+save (dat_HNP, file="./dat/dat_HNP.rda", compress="xz")
+pt <- proc.time ()
+dat_B <- osmplotr::extract_osm_objects (key="building", bbox=bbox,
+                                        verbose=TRUE)$obj
+dt <- proc.time () - pt
+save (dat_B, file="./dat/dat_B.rda", compress="xz")
 ```
+
+```{r}
+load ("./dat/dat_HP.rda")
+load ("./dat/dat_HNP.rda")
+load ("./dat/dat_B.rda")
+```
+
+```{r}
+length (dat_HP)
+length (dat_HNP)
+length (dat_B)
+```
+
+These structures are **big!!**
 
 ---------------
 
 ## 2. Mapping data with `osmplotr`
+
+### 2.1 2015 House Prices
 
 Map the 2014 house prices
 
@@ -108,28 +133,24 @@ dat <- dat [!is.na (dat$z),]
 head (dat)
 ```
 
-```{r, echo=FALSE}
-indx <- which (!london$dat_BR$id %in% london$dat_BNR$id)
-dat_B <- maptools::spRbind (london$dat_BR [indx,], london$dat_BNR)
-```
-
 Cut the price data down to values within the bbox only
 ```{r}
-bbox <- get_bbox (c(-0.15,51.5,-0.1,51.52))
+#bbox <- get_bbox (c(-0.15,51.5,-0.1,51.52))
+bbox <- slot (dat_B, "bbox")
 indx <- which (dat$x > bbox [1,1] & dat$x < bbox [1,2] &
                dat$y > bbox [2,1] & dat$y < bbox [2,2])
 dat <- dat [indx,]
 ```
 
-Then simply plot the surface
+Then simply plot the surface with a scale bar in millions of pounds
 ```{r, eval=FALSE}
-plot_osm_basemap (bbox=bbox, bg="gray20", file="map.png")
-cols <- heat.colors (30)
-zlims <- add_osm_surface (dat_B, dat=dat, col=cols)
-cols_dark <- adjust_colours (cols, -0.4)
-zl <- add_osm_surface (london$dat_H, dat=dat, col=cols_dark)
-zl <- add_osm_surface (london$dat_HP, dat=dat, col=cols_dark, lwd=2)
-add_colourbar (side=4, cols=cols, zlims=zlims, ps=10)
+plot_osm_basemap (bbox=bbox, bg="gray20", file="./figure/map.png", width=1000)
+cols <- gray (50:100 / 100)
+zlims <- add_osm_surface (dat_B, dat=dat, col=cols, verbose=TRUE)
+zl <- add_osm_surface (dat_HNP, dat=dat, col=cols, verbose=TRUE)
+zl <- add_osm_surface (dat_HP, dat=dat, col=cols, lwd=2,
+                       verbose=TRUE)
+add_colourbar (side=4, cols=cols, zlims=zlims / 1e6, ps=10)
 graphics.off ()
 ```
 ![map](./figure/map.png)

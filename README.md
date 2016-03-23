@@ -1,5 +1,5 @@
-Analyses of London housing data
-===============================
+Visualisation of London housing data using `osmplotr`
+=====================================================
 
 1. Reading Data
 ---------------
@@ -126,6 +126,84 @@ Download for a restricted area encompassing central London
 bbox <- osmplotr::get_bbox (c (-0.21, 51.46, 0.06, 51.57))
 dat_HP <- osmplotr::extract_osm_objects (key="highway", value="primary", 
                                          bbox=bbox)
+dat_HNP <- osmplotr::extract_osm_objects (key="highway", value="!primary", 
+                                         bbox=bbox)
+dat_B <- osmplotr::extract_osm_objects (key="building", bbox=bbox)
+# dat_H prompted an sp error, so these are now done explicitly
+bboxf <- paste0 ('(', bbox [2,1], ',', bbox [1,1], ',',
+                 bbox [2,2], ',', bbox [1,2], ')')
+
+get_xml <- function (key, value=NULL, bbox)
+{
+    if (!is.null (value))
+    {
+        if (substring (value, 1, 1) == '!')
+            value <- paste0 ("['", key, "'!='", 
+                            substring (value, 2, nchar (value)), "']")
+        else
+            value <- paste0 ("['", key, "'='", value, "']")
+    }
+    key <- paste0 ("['", key, "']")
+    query <- paste0 ('(node', key, value, bboxf,
+                    ';way', key, value, bboxf,
+                    ';rel', key, value, bboxf, ';')
+    url_base <- 'http://overpass-api.de/api/interpreter?data='
+    query <- paste0 (url_base, query, ');(._;>;);out;')
+    dat <- httr::GET (query)
+    XML::xmlParse (httr::content (dat, "text", encoding='UTF-8'))
+}
+dat_HP <- get_xml ("highway", "primary", bbox)
+XML::saveXML (dat_HP, file="dat_HP.xml")
+
+dat_HNP <- get_xml ("highway", "!primary", bbox)
+XML::saveXML (dat_HNP, file="dat_HNP.xml")
+dat_B <- get_xml ("building", bbox=bbox)
+XML::saveXML (dat_B, file="dat_B.xml")
+```
+
+Then conversion to osmar
+
+``` r
+dat_HP <- XML::xmlInternalTreeParse ("dat_HP.xml")
+dat_HPo <- osmar::as_osmar (dat_HP)
+save (dat_HPo, file="dat_HPo.rda")
+load ("dat_HPo.rda")
+pids <- osmar::find (dat_HPo, osmar::way (osmar::tags(k == "highway")))
+pids1 <- osmar::find_down (dat_HPo, osmar::way (pids))
+pids2 <- osmar::find_up (dat_HPo, osmar::way (pids))
+pids <- mapply (c, pids1, pids2, simplify=FALSE)
+pids <- lapply (pids, function (i) unique (i))
+obj <- subset (dat_HPo, ids = pids)
+dat_HP <- osmar::as_sp (obj, 'lines')
+save (dat_HP, file="dat_HP.rda")
+
+dat_HNP <- XML::xmlInternalTreeParse ("dat_HNP.xml")
+dat_HNPo <- osmar::as_osmar (dat_HNP)
+save (dat_HNPo, file="dat_HNPo.rda")
+load ("dat_HNPo.rda")
+pids <- osmar::find (dat_HNPo, osmar::way (osmar::tags(k == "highway")))
+pids1 <- osmar::find_down (dat_HNPo, osmar::way (pids))
+pids2 <- osmar::find_up (dat_HNPo, osmar::way (pids))
+pids <- mapply (c, pids1, pids2, simplify=FALSE)
+pids <- lapply (pids, function (i) unique (i))
+obj <- subset (dat_HNPo, ids = pids)
+# This call returns:
+# Error in validObject(.Object) :
+#   invalid class "SpatialLines" object: non-unique Lines ID of slot values
+dat_HNP <- osmar::as_sp (obj, 'lines')
+save (dat_HNP, file="dat_HNP.rda")
+
+dat_B <- XML::xmlInternalTreeParse ("dat_B.xml")
+dat_Bo <- osmar::as_osmar (dat_B)
+save (dat_Bo, file="dat_Bo.rda")
+load ("dat_Bo.rda")
+pids <- osmar::find (dat_Bo, osmar::way (osmar::tags(k == "building")))
+pids1 <- osmar::find_down (dat_Bo, osmar::way (pids))
+pids2 <- osmar::find_up (dat_Bo, osmar::way (pids))
+pids <- mapply (c, pids1, pids2, simplify=FALSE)
+pids <- lapply (pids, function (i) unique (i))
+obj <- subset (dat_Bo, ids = pids)
+obj <- osmar::as_sp (obj, 'polygons')
 ```
 
 ------------------------------------------------------------------------
@@ -201,7 +279,7 @@ zlims <- add_osm_surface (dat_B, dat=dat, col=cols)
 cols_dark <- adjust_colours (cols, -0.4)
 zl <- add_osm_surface (london$dat_H, dat=dat, col=cols_dark)
 zl <- add_osm_surface (london$dat_HP, dat=dat, col=cols_dark, lwd=2)
-add_colourbar (side=4, cols=cols, zlims=zlims, ps=10)
+add_colourbar (side=4, cols=cols, zlims=zlims / 100000, ps=10)
 graphics.off ()
 ```
 
