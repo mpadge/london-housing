@@ -1,6 +1,8 @@
 Visualisation of London housing data using `osmplotr`
 ========
 
+![](./figure/map.png)
+
 ## 1. Reading Data
 
 Data on housing prices and transactions were taken from
@@ -10,7 +12,8 @@ spatial scale) from
 [http://data.london.gov.uk/dataset/statistical-gis-boundary-files-london](http://data.london.gov.uk/dataset/statistical-gis-boundary-files-london)
 
 Because the links to these data files are likely to change, the script requires
-data to be downloaded first.  Start by reading the housing price data
+data to be downloaded first.  Start by reading the housing price data (the
+'DEFINEDNAME' stuff is just junk dumped from `read_excel`)
 ```{r, warning=FALSE, message=FALSE}
 lf <- list.files ("./dat")
 fi <- grep ("house-prices", lf)
@@ -56,40 +59,33 @@ devtools::install_github ('mpadge/osmplotr')
 ```{r, echo=FALSE, message=FALSE}
 wd <- getwd ()
 setwd ('/data/Dropbox/mark/analyses')
-devtools::load_all ('osmplotr')
+devtools::load_all ("osmplotr", export_all=FALSE)
 setwd (wd)
 ```
 
-Download a reasonably large area of London
+Download an  area of central London surrounding Hyde Park
 
 ```{r, eval=FALSE}
-bbox <- osmplotr::get_bbox (c (-0.21, 51.46, 0.06, 51.57))
-dat_HP <- osmplotr::extract_osm_objects (key="highway", value="primary", 
-                                         bbox=bbox, verbose=TRUE)$obj
-save (dat_HP, file="./dat/dat_HP.rda", compress="xz")
-dat_HNP <- osmplotr::extract_osm_objects (key="highway", value="!primary", 
-                                         bbox=bbox, verbose=TRUE)$obj
-save (dat_HNP, file="./dat/dat_HNP.rda", compress="xz")
+bbox <- osmplotr::get_bbox (c (-0.2, 51.48, -0.1, 51.52))
+dat_HP <- osmplotr::extract_osm_objects (key="highway", bbox=bbox, verbose=TRUE)
+save (dat_H, file="./dat/dat_H.rda", compress="xz")
 pt <- proc.time ()
 dat_B <- osmplotr::extract_osm_objects (key="building", bbox=bbox,
-                                        verbose=TRUE)$obj
+                                        verbose=TRUE)
 dt <- proc.time () - pt
 save (dat_B, file="./dat/dat_B.rda", compress="xz")
 ```
 
 ```{r}
-load ("./dat/dat_HP.rda")
-load ("./dat/dat_HNP.rda")
+load ("./dat/dat_H.rda")
 load ("./dat/dat_B.rda")
 ```
 
 ```{r}
-length (dat_HP)
-length (dat_HNP)
+length (dat_H)
 length (dat_B)
 ```
 
-These structures are **big!!**
 
 ---------------
 
@@ -133,24 +129,51 @@ dat <- dat [!is.na (dat$z),]
 head (dat)
 ```
 
+There are a small number of extremely expensive properties, so all values
+greater than £1,000,000 points are set to that value
+```{r}
+zlim <- 1000000
+dat$z [dat$z > zlim] <- zlim
+```
+
 Cut the price data down to values within the bbox only
 ```{r}
-#bbox <- get_bbox (c(-0.15,51.5,-0.1,51.52))
 bbox <- slot (dat_B, "bbox")
 indx <- which (dat$x > bbox [1,1] & dat$x < bbox [1,2] &
                dat$y > bbox [2,1] & dat$y < bbox [2,2])
 dat <- dat [indx,]
 ```
 
-Then simply plot the surface with a scale bar in millions of pounds
+Then simply plot the surface with a scale bar in hundreds of thousands of pounds
 ```{r, eval=FALSE}
-plot_osm_basemap (bbox=bbox, bg="gray20", file="./figure/map.png", width=1000)
-cols <- gray (50:100 / 100)
-zlims <- add_osm_surface (dat_B, dat=dat, col=cols, verbose=TRUE)
-zl <- add_osm_surface (dat_HNP, dat=dat, col=cols, verbose=TRUE)
-zl <- add_osm_surface (dat_HP, dat=dat, col=cols, lwd=2,
-                       verbose=TRUE)
-add_colourbar (side=4, cols=cols, zlims=zlims / 1e6, ps=10)
+map <- plot_osm_basemap (bbox=bbox, bg="gray20")
+cols <- rev (heat.colors (50))
+map <- add_osm_surface (map, dat_B, dat=dat, col=cols)
+map <- add_osm_surface (map, dat_H, dat=dat, col=adjust_colours (cols, -0.2))
+map <- add_colourbar (map, cols=cols, zlims=range (dat$z) / 1e5)
+```
+
+Finally, add a text label to the map and print it
+```{r, eval=FALSE}
+ypos <- bbox [2,1] + 0.92 * diff (bbox [2,])
+dat <- data.frame (x=mean (bbox[1,]), y=ypos,
+                   lab="London house prices")
+aes <- ggplot2::aes (x, y, label=lab)
+map <- map + ggplot2::geom_text (dat=dat, mapping=aes, size=10, colour="black",
+                                 family="Lato Light", fontface=2,
+                                 nudge_y=0.0005, nudge_x=0.0005)
+map <- map + ggplot2::geom_text (dat=dat, mapping=aes, size=10, colour="white",
+                                 family="Lato Light", nudge_y=0.001, fontface=2)
+print (map)
+```
+```{r, echo=FALSE, eval=FALSE}
+sht <- diff (bbox [2,]) / diff (bbox [1,])
+#ggplot2::ggsave (map, file="figure/map.png", width=30, height=30 * sht,
+#                 unit="cm")
+png (width=1000, height=1000 * sht, filename="figure/map.png")
+print (map)
 graphics.off ()
 ```
-![map](./figure/map.png)
+
+![](./figure/map.png)
+

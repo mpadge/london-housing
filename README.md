@@ -1,12 +1,14 @@
 Visualisation of London housing data using `osmplotr`
 =====================================================
 
+![](./figure/map.png)
+
 1. Reading Data
 ---------------
 
 Data on housing prices and transactions were taken from <http://data.london.gov.uk/dataset/average-house-prices-borough>, with spatial boundaries of the 'Lower Super Output Areas' (LSOA; the finest spatial scale) from <http://data.london.gov.uk/dataset/statistical-gis-boundary-files-london>
 
-Because the links to these data files are likely to change, the script requires data to be downloaded first. Start by reading the housing price data
+Because the links to these data files are likely to change, the script requires data to be downloaded first. Start by reading the housing price data (the 'DEFINEDNAME' stuff is just junk dumped from `read_excel`)
 
 ``` r
 lf <- list.files ("./dat")
@@ -120,96 +122,42 @@ head (slot (boundaries, "data"))
 devtools::install_github ('mpadge/osmplotr')
 ```
 
-Download for a restricted area encompassing central London
+Download an area of central London surrounding Hyde Park
 
 ``` r
-bbox <- osmplotr::get_bbox (c (-0.21, 51.46, 0.06, 51.57))
-dat_HP <- osmplotr::extract_osm_objects (key="highway", value="primary", 
-                                         bbox=bbox)
-dat_HNP <- osmplotr::extract_osm_objects (key="highway", value="!primary", 
-                                         bbox=bbox)
-dat_B <- osmplotr::extract_osm_objects (key="building", bbox=bbox)
-# dat_H prompted an sp error, so these are now done explicitly
-bboxf <- paste0 ('(', bbox [2,1], ',', bbox [1,1], ',',
-                 bbox [2,2], ',', bbox [1,2], ')')
-
-get_xml <- function (key, value=NULL, bbox)
-{
-    if (!is.null (value))
-    {
-        if (substring (value, 1, 1) == '!')
-            value <- paste0 ("['", key, "'!='", 
-                            substring (value, 2, nchar (value)), "']")
-        else
-            value <- paste0 ("['", key, "'='", value, "']")
-    }
-    key <- paste0 ("['", key, "']")
-    query <- paste0 ('(node', key, value, bboxf,
-                    ';way', key, value, bboxf,
-                    ';rel', key, value, bboxf, ';')
-    url_base <- 'http://overpass-api.de/api/interpreter?data='
-    query <- paste0 (url_base, query, ');(._;>;);out;')
-    dat <- httr::GET (query)
-    XML::xmlParse (httr::content (dat, "text", encoding='UTF-8'))
-}
-dat_HP <- get_xml ("highway", "primary", bbox)
-XML::saveXML (dat_HP, file="dat_HP.xml")
-
-dat_HNP <- get_xml ("highway", "!primary", bbox)
-XML::saveXML (dat_HNP, file="dat_HNP.xml")
-dat_B <- get_xml ("building", bbox=bbox)
-XML::saveXML (dat_B, file="dat_B.xml")
+bbox <- osmplotr::get_bbox (c (-0.2, 51.48, -0.1, 51.52))
+dat_HP <- osmplotr::extract_osm_objects (key="highway", bbox=bbox, verbose=TRUE)
+save (dat_H, file="./dat/dat_H.rda", compress="xz")
+pt <- proc.time ()
+dat_B <- osmplotr::extract_osm_objects (key="building", bbox=bbox,
+                                        verbose=TRUE)
+dt <- proc.time () - pt
+save (dat_B, file="./dat/dat_B.rda", compress="xz")
 ```
-
-Then conversion to osmar
 
 ``` r
-dat_HP <- XML::xmlInternalTreeParse ("dat_HP.xml")
-dat_HPo <- osmar::as_osmar (dat_HP)
-save (dat_HPo, file="dat_HPo.rda")
-load ("dat_HPo.rda")
-pids <- osmar::find (dat_HPo, osmar::way (osmar::tags(k == "highway")))
-pids1 <- osmar::find_down (dat_HPo, osmar::way (pids))
-pids2 <- osmar::find_up (dat_HPo, osmar::way (pids))
-pids <- mapply (c, pids1, pids2, simplify=FALSE)
-pids <- lapply (pids, function (i) unique (i))
-obj <- subset (dat_HPo, ids = pids)
-dat_HP <- osmar::as_sp (obj, 'lines')
-save (dat_HP, file="dat_HP.rda")
-
-dat_HNP <- XML::xmlInternalTreeParse ("dat_HNP.xml")
-dat_HNPo <- osmar::as_osmar (dat_HNP)
-save (dat_HNPo, file="dat_HNPo.rda")
-load ("dat_HNPo.rda")
-pids <- osmar::find (dat_HNPo, osmar::way (osmar::tags(k == "highway")))
-pids1 <- osmar::find_down (dat_HNPo, osmar::way (pids))
-pids2 <- osmar::find_up (dat_HNPo, osmar::way (pids))
-pids <- mapply (c, pids1, pids2, simplify=FALSE)
-pids <- lapply (pids, function (i) unique (i))
-obj <- subset (dat_HNPo, ids = pids)
-# This call returns:
-# Error in validObject(.Object) :
-#   invalid class "SpatialLines" object: non-unique Lines ID of slot values
-dat_HNP <- osmar::as_sp (obj, 'lines')
-save (dat_HNP, file="dat_HNP.rda")
-
-dat_B <- XML::xmlInternalTreeParse ("dat_B.xml")
-dat_Bo <- osmar::as_osmar (dat_B)
-save (dat_Bo, file="dat_Bo.rda")
-load ("dat_Bo.rda")
-pids <- osmar::find (dat_Bo, osmar::way (osmar::tags(k == "building")))
-pids1 <- osmar::find_down (dat_Bo, osmar::way (pids))
-pids2 <- osmar::find_up (dat_Bo, osmar::way (pids))
-pids <- mapply (c, pids1, pids2, simplify=FALSE)
-pids <- lapply (pids, function (i) unique (i))
-obj <- subset (dat_Bo, ids = pids)
-obj <- osmar::as_sp (obj, 'polygons')
+load ("./dat/dat_H.rda")
+load ("./dat/dat_B.rda")
 ```
+
+``` r
+length (dat_H)
+```
+
+    ## [1] 12538
+
+``` r
+length (dat_B)
+```
+
+    ## [1] 19548
 
 ------------------------------------------------------------------------
 
 2. Mapping data with `osmplotr`
 -------------------------------
+
+### 2.1 2015 House Prices
 
 Map the 2014 house prices
 
@@ -261,26 +209,45 @@ head (dat)
     ## 5  0.08844056 51.53898 267500
     ## 6  0.07704955 51.54043 154500
 
+There are a small number of extremely expensive properties, so all values greater than £1,000,000 points are set to that value
+
+``` r
+zlim <- 1000000
+dat$z [dat$z > zlim] <- zlim
+```
+
 Cut the price data down to values within the bbox only
 
 ``` r
-bbox <- get_bbox (c(-0.15,51.5,-0.1,51.52))
+bbox <- slot (dat_B, "bbox")
 indx <- which (dat$x > bbox [1,1] & dat$x < bbox [1,2] &
                dat$y > bbox [2,1] & dat$y < bbox [2,2])
 dat <- dat [indx,]
 ```
 
-Then simply plot the surface
+Then simply plot the surface with a scale bar in hundreds of thousands of pounds
 
 ``` r
-plot_osm_basemap (bbox=bbox, bg="gray20", file="map.png")
-cols <- heat.colors (30)
-zlims <- add_osm_surface (dat_B, dat=dat, col=cols)
-cols_dark <- adjust_colours (cols, -0.4)
-zl <- add_osm_surface (london$dat_H, dat=dat, col=cols_dark)
-zl <- add_osm_surface (london$dat_HP, dat=dat, col=cols_dark, lwd=2)
-add_colourbar (side=4, cols=cols, zlims=zlims / 100000, ps=10)
-graphics.off ()
+map <- plot_osm_basemap (bbox=bbox, bg="gray20")
+cols <- rev (heat.colors (50))
+map <- add_osm_surface (map, dat_B, dat=dat, col=cols)
+map <- add_osm_surface (map, dat_H, dat=dat, col=adjust_colours (cols, -0.2))
+map <- add_colourbar (map, cols=cols, zlims=range (dat$z) / 1e5)
 ```
 
-![map](./figure/map.png)
+Finally, add a text label to the map and print it
+
+``` r
+ypos <- bbox [2,1] + 0.92 * diff (bbox [2,])
+dat <- data.frame (x=mean (bbox[1,]), y=ypos,
+                   lab="London house prices")
+aes <- ggplot2::aes (x, y, label=lab)
+map <- map + ggplot2::geom_text (dat=dat, mapping=aes, size=10, colour="black",
+                                 family="Lato Light", fontface=2,
+                                 nudge_y=0.0005, nudge_x=0.0005)
+map <- map + ggplot2::geom_text (dat=dat, mapping=aes, size=10, colour="white",
+                                 family="Lato Light", nudge_y=0.001, fontface=2)
+print (map)
+```
+
+![](./figure/map.png)
